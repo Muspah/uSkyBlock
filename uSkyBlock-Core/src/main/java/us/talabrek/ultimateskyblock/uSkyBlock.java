@@ -49,6 +49,9 @@ import us.talabrek.ultimateskyblock.hook.HookManager;
 import us.talabrek.ultimateskyblock.imports.BlockRequirementConverter;
 import us.talabrek.ultimateskyblock.imports.ItemComponentConverter;
 import us.talabrek.ultimateskyblock.imports.USBImporterExecutor;
+import us.talabrek.ultimateskyblock.imports.storage.CompletionImporter;
+import us.talabrek.ultimateskyblock.imports.storage.IslandImporter;
+import us.talabrek.ultimateskyblock.imports.storage.PlayerImporter;
 import us.talabrek.ultimateskyblock.island.BlockLimitLogic;
 import us.talabrek.ultimateskyblock.island.IslandGenerator;
 import us.talabrek.ultimateskyblock.island.IslandInfo;
@@ -68,14 +71,29 @@ import us.talabrek.ultimateskyblock.player.PlayerLogic;
 import us.talabrek.ultimateskyblock.player.PlayerNotifier;
 import us.talabrek.ultimateskyblock.player.PlayerPerk;
 import us.talabrek.ultimateskyblock.player.TeleportLogic;
+<<<<<<< HEAD
+=======
+import us.talabrek.ultimateskyblock.signs.SignEvents;
+import us.talabrek.ultimateskyblock.signs.SignLogic;
+import us.talabrek.ultimateskyblock.storage.SkyStorage;
+>>>>>>> sql
 import us.talabrek.ultimateskyblock.util.IslandUtil;
 import us.talabrek.ultimateskyblock.util.LocationUtil;
 import us.talabrek.ultimateskyblock.util.Scheduler;
 import us.talabrek.ultimateskyblock.util.ServerUtil;
+<<<<<<< HEAD
 import us.talabrek.ultimateskyblock.uuid.PlayerDB;
 import us.talabrek.ultimateskyblock.world.WorldManager;
 
 import java.time.Duration;
+=======
+import us.talabrek.ultimateskyblock.uuid.LegacyPlayerDB;
+import us.talabrek.ultimateskyblock.uuid.PlayerDB;
+import us.talabrek.ultimateskyblock.world.WorldManager;
+
+import java.io.File;
+import java.nio.file.Files;
+>>>>>>> sql
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -134,7 +152,20 @@ public class uSkyBlock extends JavaPlugin implements uSkyBlockAPI, CommandManage
     private PlayerNotifier notifier;
     @Inject
     private USBImporterExecutor importer;
+<<<<<<< HEAD
     @Inject
+=======
+
+    private SkyStorage storage;
+
+    private static uSkyBlock instance;
+    // TODO: 28/06/2016 - R4zorax: These two should probably be moved to the proper classes
+    public File directoryPlayers;
+    public File directoryIslands;
+
+    private BukkitTask autoRecalculateTask;
+
+>>>>>>> sql
     private IslandLocatorLogic islandLocatorLogic;
     @Inject
     private PlayerDB playerDB;
@@ -164,7 +195,31 @@ public class uSkyBlock extends JavaPlugin implements uSkyBlockAPI, CommandManage
     public void onDisable() {
         deregisterApi(api);
         api = null;
+<<<<<<< HEAD
         shutdown();
+=======
+
+        HandlerList.unregisterAll(this);
+        Bukkit.getScheduler().cancelTasks(this);
+        try {
+            WorldManager.skyBlockWorld = null; // Force a reload on config.
+        } catch (Exception e) {
+            log(Level.INFO, tr("Something went wrong saving the island and/or party data!"), e);
+        }
+        PlaceholderHandler.unregister(this);
+        if (animationHandler != null) {
+            animationHandler.stop();
+        }
+        challengeLogic.shutdown();
+        eventLogic.shutdown();
+        playerLogic.shutdown();
+        islandLogic.shutdown();
+        playerDB.shutdown(); // Must be before playerNameChangeManager!!
+        AsyncWorldEditHandler.onDisable(this);
+        DebugCommand.disableLogging(null);
+
+        storage.destruct();
+>>>>>>> sql
     }
 
     @Override
@@ -191,8 +246,24 @@ public class uSkyBlock extends JavaPlugin implements uSkyBlockAPI, CommandManage
         convertConfigItemsTo1_20_6IfRequired();
         convertConfigToBlockRequirements();
 
+<<<<<<< HEAD
         reloadLegacyStuff();
         startup();
+=======
+        try {
+            storage = new SkyStorage(this);
+        } catch (RuntimeException ex) {
+            getLogger().severe("Failed to connect to provided database. Shutting down plugin...");
+            ex.printStackTrace();
+            return;
+        }
+
+        CommandManager.registerRequirements(this);
+        FileUtil.setDataFolder(getDataFolder());
+        FileUtil.setAlwaysOverwrite("levelConfig.yml");
+        I18nUtil.setDataFolder(getDataFolder());
+        reloadConfigs();
+>>>>>>> sql
 
         api = new UltimateSkyblockApi(this);
         registerApi(api);
@@ -255,6 +326,13 @@ public class uSkyBlock extends JavaPlugin implements uSkyBlockAPI, CommandManage
         if (!getDataFolder().exists()) {
             getDataFolder().mkdirs();
         }
+<<<<<<< HEAD
+=======
+        directoryPlayers = new File(getDataFolder() + File.separator + "players");
+        if (!directoryPlayers.exists()) {
+            directoryPlayers.mkdirs();
+        }
+>>>>>>> sql
     }
 
     public static uSkyBlock getInstance() {
@@ -400,7 +478,6 @@ public class uSkyBlock extends JavaPlugin implements uSkyBlockAPI, CommandManage
 
         Runnable resetIsland = () -> {
             pi.setHomeLocation(null);
-            pi.setIslandLocation(newLoc);
             pi.setHomeLocation(getSafeHomeLocation(pi));
             IslandInfo island = islandLogic.createIslandInfo(pi.locationForParty(), player);
             WorldGuardHandler.updateRegion(island);
@@ -426,8 +503,9 @@ public class uSkyBlock extends JavaPlugin implements uSkyBlockAPI, CommandManage
 
     private boolean playerIsTrusted(Player player) {
         String islandName = WorldGuardHandler.getIslandNameAt(player.getLocation());
-        if (islandName != null) {
-            us.talabrek.ultimateskyblock.api.IslandInfo islandInfo = islandLogic.getIslandInfo(islandName);
+        UUID islandAt = this.getStorage().getIslandByName(islandName).join();
+        if (islandAt != null) {
+            us.talabrek.ultimateskyblock.api.IslandInfo islandInfo = islandLogic.getIslandInfo(islandAt);
             return islandInfo != null && islandInfo.isTrusted(player);
         }
         return false;
@@ -666,6 +744,73 @@ public class uSkyBlock extends JavaPlugin implements uSkyBlockAPI, CommandManage
         saveConfig();
         // Update all of the loaded configs.
         FileUtil.reload();
+<<<<<<< HEAD
+=======
+
+        playerDB = new LegacyPlayerDB(this);
+        if (Files.exists(getDataFolder().toPath().resolve("uuid2name.yml")) || Files.exists(getDataFolder().toPath().resolve("players"))) {
+            getLogger().info("Importing old uuid2name.yml...");
+            new PlayerImporter(this);
+        }
+
+        if (Files.exists(getDataFolder().toPath().resolve("islands"))) {
+            getLogger().info("Importing old islands...");
+            new IslandImporter(this);
+        }
+
+        if (Files.exists(getDataFolder().toPath().resolve("completion"))) {
+            getLogger().info("Importing old completions...");
+            new CompletionImporter(this);
+        }
+
+        getServer().getPluginManager().registerEvents(playerDB, this);
+        worldManager = new WorldManager(this);
+        eventLogic = new EventLogic(this);
+        teleportLogic = new TeleportLogic(this);
+        PlayerUtil.loadConfig(playerDB, getConfig());
+        islandGenerator = new IslandGenerator(getDataFolder(), getConfig());
+        perkLogic = new PerkLogic(this, islandGenerator);
+        challengeLogic = new ChallengeLogic(FileUtil.getYmlConfiguration("challenges.yml"), this);
+        menu = new SkyBlockMenu(this, challengeLogic);
+        configMenu = new ConfigMenu(this);
+        FileConfiguration levelConfig = FileUtil.getYmlConfiguration("levelConfig.yml");
+        // Disabled until AWE/FAWE supports 1.13
+        //levelLogic = AsyncWorldEditHandler.isAWE() ? new AweLevelLogic(this, levelConfig) : new ChunkSnapshotLevelLogic(this, levelConfig);
+        levelLogic = new ChunkSnapshotLevelLogic(this, levelConfig);
+        orphanLogic = new OrphanLogic(this);
+        islandLocatorLogic = new IslandLocatorLogic(this);
+        islandLogic = new IslandLogic(this, directoryIslands, orphanLogic);
+        limitLogic = new LimitLogic(this);
+        blockLimitLogic = new BlockLimitLogic(this);
+        notifier = new PlayerNotifier(getConfig());
+        playerLogic = new PlayerLogic(this);
+        if (autoRecalculateTask != null) {
+            autoRecalculateTask.cancel();
+        }
+        chatLogic = new ChatLogic(this);
+    }
+
+    public void registerEventsAndCommands() {
+        if (!isRequirementsMet(Bukkit.getConsoleSender(), null)) {
+            return;
+        }
+        registerEvents();
+        int refreshEveryMinute = getConfig().getInt("options.island.autoRefreshScore", 0);
+        if (refreshEveryMinute > 0) {
+            int refreshTicks = refreshEveryMinute * 1200; // Ticks per minute
+            autoRecalculateTask = new RecalculateRunnable(this).runTaskTimer(this, refreshTicks, refreshTicks);
+        } else {
+            autoRecalculateTask = null;
+        }
+        confirmHandler = new ConfirmHandler(this, getConfig().getInt("options.advanced.confirmTimeout", 10));
+        cooldownHandler = new CooldownHandler(this);
+        animationHandler = new AnimationHandler(this);
+        getCommand("island").setExecutor(new IslandCommand(this, menu));
+        getCommand("challenges").setExecutor(new ChallengeCommand(this));
+        getCommand("usb").setExecutor(new AdminCommand(this, confirmHandler, animationHandler));
+        getCommand("islandtalk").setExecutor(new IslandTalkCommand(this, chatLogic));
+        getCommand("partytalk").setExecutor(new PartyTalkCommand(this, chatLogic));
+>>>>>>> sql
     }
 
     public IslandLogic getIslandLogic() {
@@ -936,6 +1081,10 @@ public class uSkyBlock extends JavaPlugin implements uSkyBlockAPI, CommandManage
         }
     }
 
+    public SkyStorage getStorage() {
+        return storage;
+    }
+
     /**
      * Register this uSkyBlock instance with our API provider and Bukkit's ServicesManager.
      */
@@ -952,11 +1101,16 @@ public class uSkyBlock extends JavaPlugin implements uSkyBlockAPI, CommandManage
         getServer().getServicesManager().unregister(api);
     }
 
+<<<<<<< HEAD
     public PluginConfig getPluginConfig() {
         return config;
     }
 
     public Scheduler getScheduler() {
         return new Scheduler(this);
+=======
+    public org.slf4j.Logger getLog4JLogger() {
+        return org.slf4j.LoggerFactory.getLogger(getLogger().getName());
+>>>>>>> sql
     }
 }

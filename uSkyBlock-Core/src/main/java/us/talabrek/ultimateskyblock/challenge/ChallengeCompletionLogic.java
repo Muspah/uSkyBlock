@@ -4,6 +4,7 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
+<<<<<<< HEAD
 import dk.lockfuglsang.minecraft.file.FileUtil;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -19,22 +20,31 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+=======
+import org.bukkit.configuration.file.FileConfiguration;
+import org.jetbrains.annotations.NotNull;
+import us.talabrek.ultimateskyblock.api.model.ChallengeCompletionSet;
+import us.talabrek.ultimateskyblock.player.PlayerInfo;
+import us.talabrek.ultimateskyblock.uSkyBlock;
+
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
+>>>>>>> sql
 import java.util.concurrent.ExecutionException;
-import java.util.logging.Level;
 
 /**
  * Responsible for handling ChallengeCompletions
  */
 public class ChallengeCompletionLogic {
-
     private final uSkyBlock plugin;
-    private final File storageFolder;
     private final boolean storeOnIsland;
-    private final LoadingCache<String, Map<String, ChallengeCompletion>> completionCache;
+    private final LoadingCache<UUID, ChallengeCompletionSet> completionSetCache;
 
     public ChallengeCompletionLogic(uSkyBlock plugin, FileConfiguration config) {
         this.plugin = plugin;
         storeOnIsland = config.getString("challengeSharing", "island").equalsIgnoreCase("island");
+<<<<<<< HEAD
         completionCache = CacheBuilder
             .from(plugin.getConfig().getString("options.advanced.completionCache", "maximumSize=200,expireAfterWrite=15m,expireAfterAccess=10m"))
             .removalListener((RemovalListener<String, Map<String, ChallengeCompletion>>) removal -> saveToFile(removal.getKey(), removal.getValue()))
@@ -83,19 +93,24 @@ public class ChallengeCompletionLogic {
                 File leaderFile = new File(storageFolder, islandInfo.getLeaderUniqueId().toString() + ".yml");
                 if (leaderFile.exists()) {
                     leaderFile.renameTo(configFile);
+=======
+        completionSetCache = CacheBuilder
+            .from(plugin.getConfig().getString("options.advanced.completionCache", "maximumSize=200,expireAfterWrite=15m,expireAfterAccess=10m"))
+            .removalListener((RemovalListener<UUID, ChallengeCompletionSet>) removal ->
+                plugin.getStorage().saveChallengeCompletion(removal.getValue()))
+            .build(
+                new CacheLoader<>() {
+                    @Override
+                    public @NotNull ChallengeCompletionSet load(@NotNull UUID uuid) {
+                        ChallengeCompletionSet set = plugin.getStorage().getChallengeCompletion(uuid).join();
+                        return Objects.requireNonNullElseGet(set, () -> new ChallengeCompletionSet(uuid, plugin.getChallengeLogic().getSharingType()));
+                    }
+>>>>>>> sql
                 }
-            }
-        }
-        if (configFile.exists()) {
-            FileConfiguration fileConfiguration = new YamlConfiguration();
-            FileUtil.readConfig(fileConfiguration, configFile);
-            if (fileConfiguration.getRoot() != null) {
-                return loadFromConfiguration(fileConfiguration.getRoot());
-            }
-        }
-        return new ConcurrentHashMap<>();
+            );
     }
 
+<<<<<<< HEAD
     private Map<String, ChallengeCompletion> loadFromConfiguration(ConfigurationSection root) {
         Map<String, ChallengeCompletion> challengeMap = new ConcurrentHashMap<>();
         plugin.getChallengeLogic().populateChallenges(challengeMap);
@@ -110,32 +125,40 @@ public class ChallengeCompletionLogic {
                     root.getInt(challengeName + ".timesCompletedSinceTimer", 0)
                 ));
             }
+=======
+    public UUID getSharingUuid(PlayerInfo playerInfo) {
+        if (plugin.getChallengeLogic().isIslandSharing()) {
+            return plugin.getStorage().getPlayerIsland(playerInfo.getUniqueId()).join();
+>>>>>>> sql
         }
-        return challengeMap;
+
+        return playerInfo.getUniqueId();
     }
 
-    public Map<String, ChallengeCompletion> getIslandChallenges(String islandName) {
-        if (storeOnIsland && islandName != null) {
+    public ChallengeCompletionSet getIslandChallenges(String islandName) {
+        UUID islandUuid = plugin.getStorage().getIslandByName(islandName).join();
+        if (storeOnIsland && islandUuid != null) {
             try {
-                return completionCache.get(islandName);
-            } catch (ExecutionException e) {
-                plugin.getLogger().log(Level.WARNING, "Error fetching challenge-completion for id " + islandName);
+                return completionSetCache.get(islandUuid);
+            } catch (ExecutionException ex) {
+                plugin.getLog4JLogger().warn("Error fetching challenge-completion for id {}", islandName, ex);
             }
         }
-        return new ConcurrentHashMap<>();
+
+        return null;
     }
 
-    public Map<String, ChallengeCompletion> getChallenges(PlayerInfo playerInfo) {
-        if (playerInfo == null || !playerInfo.getHasIsland() || playerInfo.locationForParty() == null) {
-            return new ConcurrentHashMap<>();
+    public ChallengeCompletionSet getChallenges(PlayerInfo playerInfo) {
+        if (playerInfo == null) {
+            return null;
         }
-        String id = getCacheId(playerInfo);
-        Map<String, ChallengeCompletion> challengeMap = new ConcurrentHashMap<>();
+
         try {
-            challengeMap = completionCache.get(id);
-        } catch (ExecutionException e) {
-            plugin.getLogger().log(Level.WARNING, "Error fetching challenge-completion for id " + id);
+            return completionSetCache.get(getSharingUuid(playerInfo));
+        } catch (ExecutionException ex) {
+            plugin.getLog4JLogger().warn("Error fetching challenge-completion for id {}", playerInfo.getUniqueId(), ex);
         }
+<<<<<<< HEAD
         if (challengeMap.isEmpty()) {
             // Fetch from the player-yml file
             challengeMap = loadFromConfiguration(playerInfo.getConfig().getConfigurationSection("player.challenges"));
@@ -164,37 +187,91 @@ public class ChallengeCompletionLogic {
                     completion.setCooldownUntil(now.plus(resetDuration));
                 } else {
                     completion.setCooldownUntil(null);
+=======
+        return new ChallengeCompletionSet(playerInfo.getUniqueId(), plugin.getChallengeLogic().getSharingType());
+    }
+
+    public void completeChallenge(PlayerInfo playerInfo, String challengeName) {
+        try {
+            ChallengeCompletionSet completionSet = completionSetCache.get(getSharingUuid(playerInfo));
+            completionSet.getCompletionMap().values().forEach(completion -> {
+                if (!completion.isOnCooldown()) {
+                    long resetInMillis = uSkyBlock.getInstance().getChallengeLogic().getResetInMillis(challengeName);
+                    if (resetInMillis >= 0) {
+                        completion.setCooldownUntil(Instant.now().plusMillis(resetInMillis));
+                    } else {
+                        completion.setCooldownUntil(Instant.EPOCH);
+                    }
+>>>>>>> sql
                 }
-            }
-            completion.addTimesCompleted();
+                completion.addTimesCompleted();
+                completion.addTimesCompletedInCooldown();
+            });
+
+        } catch (ExecutionException ex) {
+            plugin.getLog4JLogger().warn("Error completing challenge-completion {} for player {}", challengeName, playerInfo.getUniqueId(), ex);
         }
     }
 
+<<<<<<< HEAD
     public void resetChallenge(PlayerInfo playerInfo, String challenge) {
         Map<String, ChallengeCompletion> challenges = getChallenges(playerInfo);
         if (challenges.containsKey(challenge)) {
             challenges.get(challenge).setTimesCompleted(0);
             challenges.get(challenge).setCooldownUntil(null);
+=======
+    public void resetChallenge(PlayerInfo playerInfo, String challengeName) {
+        try {
+            ChallengeCompletionSet set = completionSetCache.get(getSharingUuid(playerInfo));
+            if (set.getCompletion(challengeName) != null) {
+                set.getCompletion(challengeName).setTimesCompleted(0);
+                set.getCompletion(challengeName).setCooldownUntil(Instant.ofEpochMilli(0));
+            }
+        } catch (ExecutionException ex) {
+            plugin.getLog4JLogger().warn("Error resetting challenge-completion for id {}", challengeName, ex);
+>>>>>>> sql
         }
     }
 
     public int checkChallenge(PlayerInfo playerInfo, String challengeName) {
-        Map<String, ChallengeCompletion> challenges = getChallenges(playerInfo);
-        if (challenges.containsKey(challengeName)) {
-            return challenges.get(challengeName).getTimesCompleted();
+        try {
+            ChallengeCompletionSet set = completionSetCache.get(getSharingUuid(playerInfo));
+            if (set.getCompletion(challengeName) != null) {
+                return set.getCompletion(challengeName).getTimesCompleted();
+            }
+        } catch (ExecutionException ex) {
+            plugin.getLog4JLogger().warn("Error checking challenge-completion for id {}", challengeName, ex);
         }
+
         return 0;
     }
 
     public ChallengeCompletion getChallenge(PlayerInfo playerInfo, String challenge) {
-        Map<String, ChallengeCompletion> challenges = getChallenges(playerInfo);
-        return challenges.get(challenge);
+        try {
+            return new ChallengeCompletion(completionSetCache.get(getSharingUuid(playerInfo)).getCompletion(challenge));
+        } catch (ExecutionException ex) {
+            plugin.getLog4JLogger().warn("Error fetching challenge-completion for id {}", challenge, ex);
+        }
+
+        return null;
+    }
+
+    private ChallengeCompletionSet populateChallenges(ChallengeCompletionSet set) {
+        plugin.getChallengeLogic().getRanks().forEach(rank -> rank.getChallenges().forEach(challenge ->
+            set.setCompletion(
+                challenge.getName().toLowerCase(),
+                new us.talabrek.ultimateskyblock.api.model.ChallengeCompletion(set.getUuid(), challenge.getName().toLowerCase()))));
+        return set;
     }
 
     public void resetAllChallenges(PlayerInfo playerInfo) {
-        Map<String, ChallengeCompletion> challengeMap = new ConcurrentHashMap<>();
-        plugin.getChallengeLogic().populateChallenges(challengeMap);
-        completionCache.put(getCacheId(playerInfo), challengeMap);
+        try {
+            ChallengeCompletionSet set = completionSetCache.get(getSharingUuid(playerInfo));
+            set.reset();
+            completionSetCache.put(playerInfo.getPlayerId(), populateChallenges(set));
+        } catch (ExecutionException ex) {
+            plugin.getLog4JLogger().warn("Error resetting challenge-completion for UUID {}", playerInfo.getPlayerId(), ex);
+        }
     }
 
     public void shutdown() {
@@ -202,13 +279,12 @@ public class ChallengeCompletionLogic {
     }
 
     public long flushCache() {
-        long size = completionCache.size();
-        completionCache.invalidateAll();
+        long size = completionSetCache.size();
+        completionSetCache.invalidateAll();
         return size;
     }
 
     public boolean isIslandSharing() {
         return storeOnIsland;
     }
-
 }

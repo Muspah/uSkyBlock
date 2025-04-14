@@ -37,10 +37,25 @@ public enum TimeUtil {
         return null;
     }
 
+<<<<<<< HEAD
     public static @NotNull String durationAsString(@NotNull Duration duration) {
         String result = "";
         if (duration.toDaysPart() > 0) {
             result += " " + duration.toDaysPart() + tr("d");
+=======
+    public static String epochAsString(long epoch) {
+        return millisAsString(epoch * 1000);
+    }
+
+    public static String millisAsString(long millis) {
+        long d = millis / DAYS;
+        long h = (millis % DAYS) / HOUR;
+        long m = (millis % HOUR) / MIN;
+        long s = (millis % MIN) / SEC;
+        String str = "";
+        if (d > 0) {
+            str += " " + d + tr("d");
+>>>>>>> sql
         }
         if (duration.toHoursPart() > 0) {
             result += " " + duration.toHoursPart() + tr("h");
